@@ -126,9 +126,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Tag and push image
+            - name: Tag and push image
         env:
           IMAGE: ghcr.io/${{ github.repository_owner }}/hoplid-api
         run: |
-          docker tag hoplid-api:${GITHUB_SHA} "${IMAGE}:${GITHUB_SHA}"
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}/hoplid-api"
+          docker tag "hoplid-api:${GITHUB_SHA}" "${IMAGE}:${GITHUB_SHA}"
           docker push "${IMAGE}:${GITHUB_SHA}"
