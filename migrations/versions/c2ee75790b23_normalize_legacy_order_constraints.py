@@ -45,13 +45,13 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Restore the legacy types/nullability.
+    # Restore the legacy types and constraints.
     op.alter_column(
         "orders",
         "created_at",
         existing_type=sa.DateTime(timezone=True),
-        nullable=True,
-        server_default=None,
+        nullable=False,
+        server_default=sa.text("NOW()"),
     )
 
     op.alter_column(
@@ -60,5 +60,5 @@ def downgrade() -> None:
         existing_type=sa.String(length=30),
         type_=sa.Text(),
         postgresql_using="status::text",
-        nullable=True,
+        nullable=False,
     )

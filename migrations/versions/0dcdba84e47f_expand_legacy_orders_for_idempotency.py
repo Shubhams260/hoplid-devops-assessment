@@ -72,5 +72,5 @@ def downgrade() -> None:
         existing_type=sa.String(length=100),
         type_=sa.dialects.postgresql.UUID(),
         postgresql_using="user_id::uuid",
-        nullable=True,
+        nullable=False,
     )
