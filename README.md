@@ -81,7 +81,9 @@ The HPA is configured for 2–5 replicas with a 70% CPU utilization target. Duri
 
 ## Load-test results
 
-Recorded on 2026-10-25 against the local Docker Desktop Kubernetes environment, using a Kubernetes Service port-forward and PostgreSQL.
+Recorded on 2026-10-25 and 2026-10-26 against local Docker Desktop Kubernetes, using a Kubernetes Service port-forward and PostgreSQL.
+
+### Run 1 — 2026-10-25
 
 | Metric | Observed result |
 |---|---:|
@@ -96,9 +98,35 @@ Recorded on 2026-10-25 against the local Docker Desktop Kubernetes environment, 
 | p95 latency | 937.02 ms |
 | p99 latency | 1,046.15 ms |
 
-These are results from one local test run, not production capacity guarantees. The run did not establish behavior under sustained overload or database failure.
+### Run 2 — 2026-10-26
 
-See `docs/test-results.md` for recorded observations and limitations.
+| Metric | Observed result |
+|---|---:|
+| Requests | 200 |
+| Client concurrency | 20 workers |
+| Duration | 7.93 seconds |
+| Throughput | 25.22 requests/second |
+| Successful responses | 200 |
+| Failed requests | 0 |
+| Error rate | 0.00% |
+| p50 latency | 598.57 ms |
+| p95 latency | 2,590.64 ms |
+| p99 latency | 2,691.80 ms |
+
+Reproduce Run 2 while the Kubernetes API Service is port-forwarded to local port 8000:
+
+```bash
+./.venv/bin/python loadtest/load_test.py \
+  --base-url http://127.0.0.1:8000 \
+  --requests 200 \
+  --concurrency 20
+```
+
+Both runs completed with zero failed requests. In Run 2, both API pods remained ready with zero restarts, CPU was approximately 2 millicores per pod, memory was 60–63 MiB, and HPA CPU utilization was 2% against a 70% target. The deployment remained at two replicas; scale-up was not demonstrated.
+
+These are local test observations, not production capacity guarantees. Run 2 had higher p95 and p99 latency, warranting further investigation. These runs were not a controlled performance comparison and do not establish behavior under sustained overload, database failure, or rolling deployment under traffic.
+
+See `docs/test-results.md` for full observations and limitations.
 
 ## Database migrations
 

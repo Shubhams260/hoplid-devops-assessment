@@ -83,3 +83,41 @@ This was a focused migration verification using one representative legacy row. I
 
 ### Limitations
 The rollback test used one representative legacy row in a disposable database. It does not prove that downgrade is safe for all possible production data or that application rollback is safe after a failed deployment. The test does not cover concurrent writes during migration or recovery from a partially completed external deployment.
+
+## Repeat Kubernetes API Load Test — 2026-10-26
+
+### Environment and method
+- Deployment: `hoplid-api` on local Docker Desktop Kubernetes
+- Database: PostgreSQL
+- Access path: Kubernetes Service via local port-forward on `127.0.0.1:8000`
+- Load-test script: `loadtest/load_test.py`
+- Reproduction command:
+  `./.venv/bin/python loadtest/load_test.py --base-url http://127.0.0.1:8000 --requests 200 --concurrency 20`
+- Requests: 200 unique order creation requests
+- Client concurrency: 20 worker threads
+
+### Results
+
+| Metric | Observed result |
+|---|---:|
+| Total duration | 7.93 seconds |
+| Throughput | 25.22 requests/second |
+| Successful HTTP responses (2xx) | 200 |
+| Failed requests | 0 |
+| Error rate | 0.00% |
+| p50 latency | 598.57 ms |
+| p95 latency | 2,590.64 ms |
+| p99 latency | 2,691.80 ms |
+
+### Kubernetes observations
+- HPA CPU target: 2% / 70%
+- Minimum and maximum replicas: 2 and 5
+- Replicas observed after the test: 2
+- Pod CPU: 2 millicores per pod at the time of inspection
+- Pod memory: 60 MiB and 63 MiB
+- Pod restarts: 0
+
+### Interpretation and limitations
+All 200 requests succeeded in this run, and both API pods remained ready with no observed restarts. CPU utilization stayed well below the HPA target, so scale-up was not expected or demonstrated. The p95 and p99 latencies were substantially higher than the median, indicating a slower tail of requests that warrants further investigation. This test does not identify the cause of that latency and does not establish production capacity or behavior during sustained overload, database failure, or rolling deployment under traffic.
+
+The earlier load-test run above is retained as a separate historical measurement. Differences between runs may reflect runtime and environment variability; these results should not be interpreted as a controlled performance comparison.
