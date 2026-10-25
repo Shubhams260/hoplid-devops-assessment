@@ -108,16 +108,18 @@ Review the database URL in `alembic.ini` before running migrations. Validate mig
 
 ## CI/CD
 
-`.github/workflows/ci.yml` defines:
+`.github/workflows/ci.yml` implements the following GitHub Actions pipeline:
 
-1. A PostgreSQL-backed test job.
-2. A Docker image build.
-3. Trivy filesystem and image vulnerability scans configured to fail on detected HIGH or CRITICAL findings, excluding unfixed vulnerabilities.
-4. Commit-SHA-tagged image publishing to GitHub Container Registry on pushes to `main`.
+1. Runs the application tests against a PostgreSQL test database.
+2. Builds the Docker image.
+3. Runs Trivy filesystem and container image vulnerability scans, configured to fail on detected HIGH or CRITICAL findings, excluding unfixed vulnerabilities.
+4. Publishes a Docker image to GitHub Container Registry (GHCR), tagged with the commit SHA, on pushes to `main`.
 
-The workflow has been written and its YAML syntax checked locally. A successful GitHub Actions run, vulnerability scan result, and registry publication have not yet been verified.
+**Verified:** The GitHub Actions pipeline completed successfully on commit `969744f76a21aa9f8f2164e0ff4abecc094fbfc6`. All three jobs—application tests, container build and security scan, and immutable image publishing—passed.
 
-Automated Kubernetes deployment, rollout verification, and automatic rollback are not currently demonstrated by this workflow.
+The image was published to GHCR as `ghcr.io/shubhams260/hoplid-devops-assessment/hoplid-api`, tagged with the commit SHA. The package is currently private, so reviewers require appropriate access to pull it.
+
+Automated Kubernetes deployment, rollout verification, and automatic rollback are not currently implemented in this workflow.
 
 ## Failure testing and recovery
 
