@@ -85,7 +85,7 @@ jobs:
         run: docker build -t hoplid-api:${GITHUB_SHA} .
 
       - name: Scan filesystem for vulnerabilities
-        uses: aquasecurity/trivy-action@0.29.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -95,7 +95,7 @@ jobs:
           ignore-unfixed: true
 
       - name: Scan container image
-        uses: aquasecurity/trivy-action@0.29.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: hoplid-api:${{ github.sha }}
           format: table
