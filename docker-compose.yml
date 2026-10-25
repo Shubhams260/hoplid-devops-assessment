@@ -1,0 +1,53 @@
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: hoplid
+      POSTGRES_USER: hoplid
+      POSTGRES_PASSWORD: hoplid_local_only
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hoplid -d hoplid"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    environment:
+      DATABASE_URL: postgresql+psycopg://hoplid:hoplid_local_only@db:5432/hoplid
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  test-api:
+    build: .
+    environment:
+      DATABASE_URL: postgresql+psycopg://hoplid:hoplid_local_only@db:5432/hoplid_test
+    ports:
+      - "8001:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  legacy-api:
+    build: .
+    environment:
+      DATABASE_URL: postgresql+psycopg://hoplid:hoplid_local_only@db:5432/hoplid_legacy
+    ports:
+      - "8002:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
