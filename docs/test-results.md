@@ -1,21 +1,5 @@
 # Test and load-test results
 
-Fill this report only after running tests. Do not invent numbers.
-
-- Date/time:
-- Git commit:
-- Host OS / CPU / RAM:
-- Docker / Python versions:
-- Test command and result:
-- Load tool and exact command:
-- Duration / concurrency:
-- Throughput (requests/second):
-- p95 latency:
-- p99 latency:
-- Error rate:
-- Failure injection performed:
-- Observed limitations:
-
 ## Kubernetes API Load Test — 2026-10-25
 
 ### Environment
