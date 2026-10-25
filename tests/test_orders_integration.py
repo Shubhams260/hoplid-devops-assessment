@@ -20,7 +20,6 @@ def db():
         )
 
     conn = psycopg.connect(DATABASE_URL)
-    conn = psycopg.connect(DATABASE_URL)
     conn.autocommit = True
     with conn.cursor() as cur:
         cur.execute("""
