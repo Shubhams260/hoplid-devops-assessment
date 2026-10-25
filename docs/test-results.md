@@ -121,3 +121,37 @@ The rollback test used one representative legacy row in a disposable database. I
 All 200 requests succeeded in this run, and both API pods remained ready with no observed restarts. CPU utilization stayed well below the HPA target, so scale-up was not expected or demonstrated. The p95 and p99 latencies were substantially higher than the median, indicating a slower tail of requests that warrants further investigation. This test does not identify the cause of that latency and does not establish production capacity or behavior during sustained overload, database failure, or rolling deployment under traffic.
 
 The earlier load-test run above is retained as a separate historical measurement. Differences between runs may reflect runtime and environment variability; these results should not be interpreted as a controlled performance comparison.
+
+## Isolated Database Connection-Pool Pressure Test — 2026-10-26
+
+### Environment and method
+- Database: local PostgreSQL test database `hoplid_test`
+- Test script: `scripts/db_pool_pressure.py`
+- SQLAlchemy pool size: 2 connections
+- Maximum overflow connections: 0
+- Connection acquisition timeout: 1 second
+- Database operation: `SELECT 1`
+- Safety: script requires an explicit `DATABASE_URL` and refuses to run unless the target database is `hoplid_test`
+- Writes: none; the test does not modify database records
+
+### Reproduction command
+Set `DATABASE_URL` to the dedicated local test database, then run:
+
+`./.venv/bin/python scripts/db_pool_pressure.py`
+
+### Results
+
+| Check | Observed result |
+|---|---|
+| Database safety guard | Passed; target was `hoplid_test` |
+| First connection held | Passed |
+| Second connection acquired | Passed |
+| Third connection acquisition | Timed out as expected |
+| Observed timeout | 1.000 second |
+| Database writes | None |
+| Test result | Passed |
+
+### Interpretation and limitations
+The test reproduces SQLAlchemy connection-pool exhaustion in a standalone engine configured with two connections, no overflow, and a one-second acquisition timeout. It confirms that an additional connection request times out when both available pool connections are checked out.
+
+This is an isolated pool test, not a test of the running API's own connection pool. It does not establish the API's HTTP response or recovery behavior during pool exhaustion, nor does it demonstrate PostgreSQL server-wide connection exhaustion. The test does not modify application pool settings or the active `hoplid_legacy` database.
