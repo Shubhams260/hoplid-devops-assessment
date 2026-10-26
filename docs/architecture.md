@@ -67,3 +67,22 @@ The pipeline has completed successfully. Automated Kubernetes deployment and aut
 The project has not demonstrated database-outage recovery, sustained overload behavior, a rolling deployment under continuous traffic, or an automated release rollback. The recorded load-test results are from a local development environment and should not be treated as production capacity guarantees.
 
 See `../README.md` and `test-results.md` for setup instructions, test evidence, and measured results.
+
+## Horizontal Scaling Policy
+
+The API uses a Kubernetes Horizontal Pod Autoscaler (HPA) targeting average CPU utilization.
+
+- **Metric:** CPU utilization relative to each pod's CPU request.
+- **Target:** 70% average CPU utilization.
+- **Minimum replicas:** 2.
+- **Maximum replicas:** 5.
+- **Scale-up behavior:** No stabilization delay; policies permit up to two additional pods or a 100% increase per 60-second policy period, subject to Kubernetes HPA calculations and the replica limit.
+- **Scale-down behavior:** Five-minute stabilization window, with a maximum 50% reduction per 60-second policy period.
+- **Resource requests:** 100m CPU and 128Mi memory per API container.
+- **Resource limits:** 500m CPU and 256Mi memory per API container.
+
+The policy assumes CPU utilization is a useful indicator of API demand. CPU-based scaling may not respond adequately to database connection exhaustion, slow database queries, network waits, or other I/O-bound bottlenecks. Those conditions require separate monitoring and operational response.
+
+The local cluster currently reports valid CPU metrics. The observed workload has been low (approximately 2–3% CPU utilization), so actual HPA scale-up has not yet been demonstrated. Earlier HPA events reported missing metrics during a transient period. The configured policy is not evidence by itself that scale-up has been validated.
+
+The local test environment does not establish production capacity or availability guarantees. Production tuning should use representative sustained load, database capacity measurements, and observed latency/error objectives.
