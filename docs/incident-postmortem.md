@@ -1,61 +1,45 @@
 # Recovery Test Report — Hoplid Order Service
 
-## Purpose
+These are controlled local assessment tests, not production incidents.
 
-This document records controlled recovery exercises for the local assessment environment. These are tests, not claims of production incidents.
+## Scenario A: API pod replacement
 
-## Scenario A: API pod replacement (previously tested)
+A pod was intentionally terminated. Kubernetes replaced it, the Deployment returned to two ready replicas, and the previously stored order remained in PostgreSQL.
 
-### Impact
-A single API pod was terminated during a controlled test.
+This local test does not establish production availability guarantees.
 
-### Detection
-Kubernetes Deployment status and readiness were observed.
+## Scenario B: deliberately failed release — completed
 
-### Root cause
-Intentional pod termination for resilience validation.
+**Environment:** Docker Desktop Kubernetes, namespace `default`, Deployment `hoplid-api`.
 
-### Recovery
-Kubernetes created a replacement pod. The Deployment returned to two running replicas, and the previously stored order remained in PostgreSQL.
+**Original image:** `hoplid-api:local`
 
-### Preventive controls
-- Multiple replicas and Kubernetes self-healing.
-- Startup, readiness and liveness probes.
-- Rolling-update settings and resource requests/limits.
-- PostgreSQL-backed order persistence.
-- Idempotency key and database uniqueness constraint.
+**Injected image:** `hoplid-api:deliberately-missing-for-recovery-demo`
 
-### Limitations
-This scenario did not demonstrate recovery from a PostgreSQL outage, a failed release, or a production incident.
+### Impact and detection
 
-## Scenario B: deliberately failed release (to be executed and evidenced)
-
-Use `scripts/demo-failed-release.sh` only against the disposable local assessment cluster. The script changes the Deployment to a deliberately unavailable image, observes rollout failure, and restores the previously configured image in an exit trap.
-
-Record the actual terminal output, timestamp, namespace, original image, injected image, rollout result, and final ready replicas here after running the test. Do not claim the scenario passed until the output confirms the original image was restored and the rollout became ready.
-
-### Impact
-The deliberately unavailable image prevented the replacement replica from becoming ready. The two original API pods remained Running and Ready during the failed rollout. No order request was sent as part of this failure-injection demonstration, so this test does not independently establish database integrity.
-
-### Detection
-`kubectl rollout status` timed out as expected. `kubectl get pods` showed the injected replacement in `ImagePullBackOff`, while the two original replicas remained ready.
+The injected image prevented the replacement pod from starting. The rollout timed out as expected, and the replacement entered `ImagePullBackOff`. The two existing API replicas remained ready.
 
 ### Root cause
-Intentional use of an unavailable image tag.
+
+Intentional use of an unavailable image tag to simulate a failed release.
 
 ### Recovery
-The script's exit trap restored the original image `hoplid-api:local`. Kubernetes then reported `deployment "hoplid-api" successfully rolled out`, and the subsequent rollout-status check also succeeded. The immediate pod snapshot still showed the failed replacement Terminating. The final deployment and pod status are checked again during submission verification. This test restores only the application image; it does not reverse database migrations.
+
+The script's exit trap restored `hoplid-api:local`. Kubernetes reported a successful rollout after restoration. Final verification showed 2/2 replicas ready, updated and available; both API pods were Running with zero restarts.
+
+This was scripted local image restoration, not an automatic rollback triggered by GitHub Actions. No order request was sent during this failure injection, so database integrity was not independently tested by this scenario.
 
 ### Preventive actions
-- Immutable image tags based on commit SHA.
-- Automated unit, integration and migration tests before image publication.
-- Dependency and image vulnerability scans.
-- Deployment rollout/readiness and order smoke-test gate.
-- Expand-and-contract schema changes.
+
+- Immutable commit-SHA image tags.
+- Automated tests and vulnerability scans before image publication.
+- Deployment readiness and order-creation verification.
+- Expand-and-contract database changes.
 - Application rollback kept separate from database migration rollback.
 
-## WebSocket and in-flight work considerations
+## WebSocket and in-flight work
 
-The current prototype does not implement a WebSocket endpoint. For a production extension, clients should reconnect with bounded exponential backoff and jitter, re-authenticate, and resubscribe to their order/status stream. Clients should reconcile order state from the durable API after reconnect rather than assuming every event was received.
+The prototype does not implement a WebSocket endpoint. A production extension should reconnect clients with bounded exponential backoff and jitter, re-authenticate, resubscribe, and reconcile order state through the durable API.
 
-During pod termination, the pre-stop drain hook should mark the pod unready, reject new application work, allow endpoint propagation, and let in-flight requests finish within the termination grace period. Requests that time out after a database commit must be retried with the same idempotency key.
+During termination, the pre-stop hook asks the application to drain, fail readiness and reject new application requests. Completion of concurrent in-flight requests and exact endpoint-propagation timing have not been fully demonstrated. Uncertain order submissions should be retried using the same idempotency key.

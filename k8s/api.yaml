@@ -1,12 +1,4 @@
-
-apiVersion: v1
-kind: Secret
-metadata:
-  name: hoplid-drain
-type: Opaque
-stringData:
-  token: "local-drain-token-change-before-production"
----
+# Deployment and Service only. Provision required Secrets separately.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

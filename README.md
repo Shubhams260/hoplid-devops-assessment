@@ -136,45 +136,43 @@ Review the database URL in `alembic.ini` before running migrations. Validate mig
 
 ## CI/CD
 
-`.github/workflows/ci.yml` implements the following GitHub Actions pipeline:
+`.github/workflows/ci.yml` runs unit tests, integration tests, a dedicated migration test, container build and Trivy scans. On pushes to `main`, it publishes a GHCR image tagged with the full commit SHA.
 
-1. Runs the application tests against a PostgreSQL test database.
-2. Builds the Docker image.
-3. Runs Trivy filesystem and container image vulnerability scans, configured to fail on detected HIGH or CRITICAL findings, excluding unfixed vulnerabilities.
-4. Publishes a Docker image to GitHub Container Registry (GHCR), tagged with the commit SHA, on pushes to `main`.
+**Verified:** [GitHub Actions run #21](https://github.com/Shubhams260/hoplid-devops-assessment/actions/runs/40281210587) passed all four jobs for commit `e12c400`. Check the Actions page for the newest run after this update.
 
-**Verified:** The GitHub Actions pipeline completed successfully on commit `969744f76a21aa9f8f2164e0ff4abecc094fbfc6`. All three jobs—application tests, container build and security scan, and immutable image publishing—passed.
-
-The image was published to GHCR as `ghcr.io/shubhams260/hoplid-devops-assessment/hoplid-api`, tagged with the commit SHA. The package is currently private, so reviewers require appropriate access to pull it.
-
-Automated Kubernetes deployment, rollout verification, and automatic rollback are not currently implemented in this workflow.
+This workflow publishes an image; it does not automatically deploy to the local Kubernetes cluster or automatically trigger a rollback. GHCR package visibility is separate from repository visibility.
 
 ## Failure testing and recovery
 
 Verified scenarios include:
+- Idempotent retries and HTTP 409 for a reused key with a different payload.
+- Concurrent duplicate requests producing one durable order.
+- Isolated database failure and connection-pool pressure tests, with documented limitations.
+- Pod termination during a load-test run and Kubernetes replacement.
+- A deliberately failed local rollout: the unavailable image entered `ImagePullBackOff`, rollout timed out, and the script restored `hoplid-api:local`. Final verification showed 2/2 replicas ready.
 
-- Repeated requests using the same idempotency key.
-- Reusing a key with a different payload.
-- Concurrent duplicate requests producing one database order.
-- Replacing a terminated API pod and checking that the persisted order remained in PostgreSQL.
+The failed-release demonstration validates local failure detection and scripted image restoration. It does not demonstrate an automatic rollback triggered by GitHub Actions or independently prove database integrity during that particular test.
 
-Not yet verified end-to-end:
-
-- Database outage and connection-pressure behavior.
-- A failed application release followed by a demonstrated rollback.
-- A rolling deployment under continuous traffic.
+Not fully verified:
+- API-wide pool exhaustion under sustained overload.
 - Automated latency/error-rate release gates.
+- The final status-code read-path cutover and removal of the legacy text column.
+- Runtime WebSocket reconnection; the prototype does not implement a WebSocket endpoint.
+- Production-scale migration performance or zero-downtime guarantees.
 
-See `docs/incident-postmortem.md` and `docs/test-results.md` for the recorded evidence and limitations.
+See `docs/incident-postmortem.md` and `docs/test-results.md` for actual observations and limitations.
 
 ## Security notes
 
-- `.env`, virtual environments, Python caches, and test artifacts are excluded through `.gitignore`.
-- `.env.example` and `k8s/db-secret.example.yaml` are templates only.
-- Replace all local/example credentials before deploying to any shared environment.
-- Do not commit real credentials or Kubernetes Secret values.
-- The local Metrics Server configuration used for testing is not a production security recommendation.
+- `.env`, virtual environments, Python caches and test artifacts are excluded by `.gitignore`.
+- `.env.example` and `k8s/db-secret.example.yaml` are templates for local development only.
+- `k8s/api.yaml` contains the Deployment and Service, not a hardcoded drain-token Secret. Provision `hoplid-db` and `hoplid-drain` separately.
+- Compose uses `hoplid_local_only` as a local development password. Never reuse it in a shared environment.
+- Gitleaks reported no findings across 22 commits or the current files when scanned. Automated scanning cannot guarantee detection of every sensitive value.
+- The local Metrics Server configuration used during testing is not a production security recommendation.
 
 ## AI and tool disclosure
 
-AI assistance was used during implementation and troubleshooting. The final submission should accurately describe the assistance received, the code and design decisions personally reviewed, and the commands and tests actually run. Do not claim unverified behavior or results.
+AI assistance was used to draft and refine code, the workflow, migration strategy, shell scripts, documentation and troubleshooting. Commands and tests were run during development, and design decisions should be explained by the author during review.
+
+Observed evidence includes a successful GitHub Actions run, an isolated PostgreSQL migration test, Gitleaks scans, unit tests, and a local Kubernetes failed-release/restoration test. Limitations documented in this repository remain; unverified behavior is not presented as a production guarantee.
