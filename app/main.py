@@ -201,6 +201,7 @@ def create_order(
             idempotency_key=idempotency_key,
             request_hash=digest,
             status="confirmed",
+            status_code=2,  # confirmed; see the versioned status-code mapping migration
         )
         db.add(order)
 

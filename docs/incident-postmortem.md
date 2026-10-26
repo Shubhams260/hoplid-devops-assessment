@@ -2,44 +2,60 @@
 
 ## Purpose
 
-This report documents a controlled Kubernetes pod-replacement test. It is a recovery test, not a report of a production incident.
+This document records controlled recovery exercises for the local assessment environment. These are tests, not claims of production incidents.
 
-## Scenario
+## Scenario A: API pod replacement (previously tested)
 
-An API pod running in the local Docker Desktop Kubernetes environment was deliberately terminated to verify that the Kubernetes Deployment would replace it and that an existing order would remain persisted in PostgreSQL.
+### Impact
+A single API pod was terminated during a controlled test.
 
-## Expected Behavior
+### Detection
+Kubernetes Deployment status and readiness were observed.
 
-- Kubernetes should create a replacement API pod and restore the desired replica count.
-- The application should become ready after the replacement starts.
-- An order previously stored in PostgreSQL should remain available because its persistence is independent of the API pod lifecycle.
+### Root cause
+Intentional pod termination for resilience validation.
 
-## Observed Result
+### Recovery
+Kubernetes created a replacement pod. The Deployment returned to two running replicas, and the previously stored order remained in PostgreSQL.
 
-The terminated API pod was replaced, the Deployment returned to two running replicas, and the previously created order remained persisted in PostgreSQL.
-
-## Data Integrity Verification
-
-The existing order was checked after pod replacement. The order remained in the database.
-
-## Preventive and Resilience Mechanisms
-
-The deployment configuration includes:
-
-- Kubernetes Deployment replica management.
-- Startup, readiness, and liveness probes.
-- Rolling-update configuration.
-- Resource requests and limits.
+### Preventive controls
+- Multiple replicas and Kubernetes self-healing.
+- Startup, readiness and liveness probes.
+- Rolling-update settings and resource requests/limits.
 - PostgreSQL-backed order persistence.
+- Idempotency key and database uniqueness constraint.
 
-These mechanisms support application recovery and operational resilience, but do not guarantee recovery from every failure scenario.
+### Limitations
+This scenario did not demonstrate recovery from a PostgreSQL outage, a failed release, or a production incident.
 
-## Limitations
+## Scenario B: deliberately failed release (to be executed and evidenced)
 
-This test does not demonstrate recovery from a PostgreSQL outage, a failed application release, a rolling deployment under continuous traffic, or an automated rollback. No production incident is claimed.
+Use `scripts/demo-failed-release.sh` only against the disposable local assessment cluster. The script changes the Deployment to a deliberately unavailable image, observes rollout failure, and restores the previously configured image in an exit trap.
 
-## Evidence
+Record the actual terminal output, timestamp, namespace, original image, injected image, rollout result, and final ready replicas here after running the test. Do not claim the scenario passed until the output confirms the original image was restored and the rollout became ready.
 
-The test was performed against the local Docker Desktop Kubernetes environment. The associated deployment and test observations are documented in the project README and `test-results.md`.
+### Impact
+The deliberately unavailable image prevented the replacement replica from becoming ready. The two original API pods remained Running and Ready during the failed rollout. No order request was sent as part of this failure-injection demonstration, so this test does not independently establish database integrity.
 
-For reproducible verification, use the deployment verification script at `scripts/verify-deployment.sh` with the local Kubernetes environment running and the API accessible at the configured base URL.
+### Detection
+`kubectl rollout status` timed out as expected. `kubectl get pods` showed the injected replacement in `ImagePullBackOff`, while the two original replicas remained ready.
+
+### Root cause
+Intentional use of an unavailable image tag.
+
+### Recovery
+The script's exit trap restored the original image `hoplid-api:local`. Kubernetes then reported `deployment "hoplid-api" successfully rolled out`, and the subsequent rollout-status check also succeeded. The immediate pod snapshot still showed the failed replacement Terminating. The final deployment and pod status are checked again during submission verification. This test restores only the application image; it does not reverse database migrations.
+
+### Preventive actions
+- Immutable image tags based on commit SHA.
+- Automated unit, integration and migration tests before image publication.
+- Dependency and image vulnerability scans.
+- Deployment rollout/readiness and order smoke-test gate.
+- Expand-and-contract schema changes.
+- Application rollback kept separate from database migration rollback.
+
+## WebSocket and in-flight work considerations
+
+The current prototype does not implement a WebSocket endpoint. For a production extension, clients should reconnect with bounded exponential backoff and jitter, re-authenticate, and resubscribe to their order/status stream. Clients should reconcile order state from the durable API after reconnect rather than assuming every event was received.
+
+During pod termination, the pre-stop drain hook should mark the pod unready, reject new application work, allow endpoint propagation, and let in-flight requests finish within the termination grace period. Requests that time out after a database commit must be retried with the same idempotency key.

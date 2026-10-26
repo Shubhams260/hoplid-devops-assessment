@@ -31,6 +31,7 @@ def db():
                 idempotency_key VARCHAR(255) NOT NULL,
                 request_hash VARCHAR(64) NOT NULL,
                 status VARCHAR(30) NOT NULL,
+                status_code SMALLINT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 CONSTRAINT uq_orders_user_idempotency
                     UNIQUE (user_id, idempotency_key)
