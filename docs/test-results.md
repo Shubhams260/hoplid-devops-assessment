@@ -155,3 +155,35 @@ Set `DATABASE_URL` to the dedicated local test database, then run:
 The test reproduces SQLAlchemy connection-pool exhaustion in a standalone engine configured with two connections, no overflow, and a one-second acquisition timeout. It confirms that an additional connection request times out when both available pool connections are checked out.
 
 This is an isolated pool test, not a test of the running API's own connection pool. It does not establish the API's HTTP response or recovery behavior during pool exhaustion, nor does it demonstrate PostgreSQL server-wide connection exhaustion. The test does not modify application pool settings or the active `hoplid_legacy` database.
+
+### Kubernetes Service Availability During Pod Replacement — 2026-10-26
+
+**Environment**
+- Cluster: Docker Desktop Kubernetes
+- Deployment: `hoplid-api`
+- Desired replicas: 2
+- Probe endpoint: `http://hoplid-api/health`
+- Probe location: temporary in-cluster pod using `curlimages/curl:8.10.1`
+
+**Procedure**
+1. Confirmed both API replicas were Ready.
+2. Started an in-cluster health monitor targeting the Kubernetes Service DNS name.
+3. The monitor issued 300 HTTP health requests at approximately 200 ms intervals, with a two-second request timeout.
+4. Observed the monitor's final output and checked the API pods and Service endpoints.
+
+**Results**
+- Requests attempted: 300
+- Recorded failures: 0
+- Error rate: 0%
+- Final API replicas: 2 Ready
+- Final Service endpoints: 2
+
+**Interpretation**
+
+All 300 health requests recorded by the probe completed without a reported failure. Kubernetes also maintained two Ready API replicas and two Service endpoints after pod replacement.
+
+**Limitation**
+
+The available terminal output does not establish the exact timing of the pod deletion relative to the monitoring interval. Therefore, this run demonstrates successful Service health checks and replica recovery, but does not conclusively establish zero failed requests during the exact pod-termination window. A timestamped, synchronized repeat would provide stronger evidence of termination-time availability.
+
+This is a local-cluster test and does not establish production availability guarantees.
