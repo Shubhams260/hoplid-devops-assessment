@@ -309,3 +309,27 @@ The test observed zero failed requests during a load run that overlapped with de
 
 ### Limitations
 The test did not timestamp individual requests against the exact pod termination interval. Therefore, it demonstrates successful load-test completion during the disruption run, but does not conclusively prove that every request overlapping the termination window succeeded. The result is from a local assessment cluster and does not establish production availability guarantees.
+
+## Application Observability Verification — 2026-10-26
+
+### Changes
+
+- Added HTTP request completion logs containing the method, path, status code, and elapsed duration.
+- Added slow SQL execution warnings controlled by `SLOW_QUERY_THRESHOLD_SECONDS` (default: 0.5 seconds).
+- Added database pool checkout/check-in diagnostics at DEBUG level.
+- Added distinct log messages for SQLAlchemy pool timeouts and other database errors.
+- Configured application logging through the `LOG_LEVEL` environment variable (default: INFO).
+
+### Verification
+
+- The updated test API image built successfully.
+- `GET /health/live` returned HTTP 200.
+- `GET /health/ready` returned HTTP 200 with the database reporting ready.
+- The custom `request_completed` log was observed for a health request.
+- Slow-query warning output was verified using an isolated in-memory SQLite database with the threshold set to zero.
+- Unit tests: 2 passed.
+- Python compilation and `git diff --check` completed successfully.
+
+### Limitations
+
+The slow-query test verifies warning emission, not detection of a genuinely slow PostgreSQL query. Database pool checkout/check-in diagnostics are implemented at DEBUG level; API-wide pool exhaustion has not been demonstrated. These logs are not a replacement for a metrics backend or monitoring dashboard. The observability changes were validated against the local test API, not a production deployment.

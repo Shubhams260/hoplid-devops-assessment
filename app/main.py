@@ -4,11 +4,12 @@ import hmac
 import json
 import logging
 import os
+import time
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import select, text
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError, TimeoutError as SQLAlchemyTimeoutError
 from sqlalchemy.orm import Session
 
 from .database import engine, get_db
@@ -16,6 +17,10 @@ from .models import Order
 from .schemas import CreateOrderIn
 
 
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
 logger = logging.getLogger("hoplid.api")
 
 
@@ -37,7 +42,11 @@ app = FastAPI(
 
 
 @app.middleware("http")
-async def reject_new_requests_while_draining(request: Request, call_next):
+async def observe_requests(request: Request, call_next):
+    started = time.perf_counter()
+    method = request.method
+    path = request.url.path
+
     allowed_paths = {
         "/health",
         "/health/live",
@@ -47,15 +56,36 @@ async def reject_new_requests_while_draining(request: Request, call_next):
 
     if (
         getattr(request.app.state, "shutting_down", False)
-        and request.url.path not in allowed_paths
+        and path not in allowed_paths
     ):
-        return JSONResponse(
+        response = JSONResponse(
             status_code=503,
             content={"detail": "Service is shutting down"},
             headers={"Connection": "close"},
         )
+    else:
+        try:
+            response = await call_next(request)
+        except Exception:
+            duration = time.perf_counter() - started
+            logger.exception(
+                "request_failed method=%s path=%s duration_seconds=%.3f",
+                method,
+                path,
+                duration,
+            )
+            raise
 
-    return await call_next(request)
+    duration = time.perf_counter() - started
+    log_method = logger.warning if response.status_code >= 500 else logger.info
+    log_method(
+        "request_completed method=%s path=%s status_code=%d duration_seconds=%.3f",
+        method,
+        path,
+        response.status_code,
+        duration,
+    )
+    return response
 
 
 @app.get("/health")
@@ -80,6 +110,7 @@ def start_draining(
         raise HTTPException(status_code=403, detail="Invalid drain token")
 
     request.app.state.shutting_down = True
+    logger.info("application_drain_started")
     return {"status": "draining"}
 
 
@@ -94,9 +125,18 @@ def readiness(request: Request, db: Session = Depends(get_db)):
     try:
         db.execute(text("SELECT 1"))
         return {"status": "ready", "database": "ok"}
+    except SQLAlchemyTimeoutError as exc:
+        logger.warning(
+            "database_pool_timeout operation=readiness error_type=%s",
+            type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Database temporarily unavailable",
+        ) from exc
     except SQLAlchemyError as exc:
         logger.warning(
-            "Database readiness check failed (%s)",
+            "database_readiness_failed error_type=%s",
             type(exc).__name__,
         )
         raise HTTPException(
@@ -188,17 +228,30 @@ def create_order(
                 detail="Order could not be saved; retry using the same key",
             )
 
+    except SQLAlchemyTimeoutError as exc:
+        try:
+            db.rollback()
+        except SQLAlchemyError:
+            logger.exception("database_rollback_failed")
+        logger.warning(
+            "database_pool_timeout operation=create_order error_type=%s",
+            type(exc).__name__,
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Database temporarily unavailable; retry using the same Idempotency-Key",
+        ) from exc
+
     except SQLAlchemyError as exc:
         try:
             db.rollback()
         except SQLAlchemyError:
-            logger.exception("Database rollback failed after order error")
-
+            logger.exception("database_rollback_failed")
         logger.exception(
-            "Database operation failed during order creation (%s)",
+            "database_operation_failed operation=create_order error_type=%s",
             type(exc).__name__,
         )
-
         raise HTTPException(
             status_code=503,
             detail=(
