@@ -1,19 +1,22 @@
-
 from contextlib import asynccontextmanager
 import hashlib
 import hmac
 import json
+import logging
 import os
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import select, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from .database import engine, get_db
 from .models import Order
 from .schemas import CreateOrderIn
+
+
+logger = logging.getLogger("hoplid.api")
 
 
 @asynccontextmanager
@@ -91,11 +94,15 @@ def readiness(request: Request, db: Session = Depends(get_db)):
     try:
         db.execute(text("SELECT 1"))
         return {"status": "ready", "database": "ok"}
-    except Exception:
+    except SQLAlchemyError as exc:
+        logger.warning(
+            "Database readiness check failed (%s)",
+            type(exc).__name__,
+        )
         raise HTTPException(
             status_code=503,
             detail="Database unavailable",
-        )
+        ) from exc
 
 
 def normalized_payload(payload: CreateOrderIn):
@@ -115,6 +122,15 @@ def order_response(order: Order):
     }
 
 
+def existing_order_response(order: Order, digest: str):
+    if order.request_hash != digest:
+        raise HTTPException(
+            status_code=409,
+            detail="Idempotency-Key already used with a different payload",
+        )
+    return order_response(order)
+
+
 @app.post("/api/orders", status_code=201)
 def create_order(
     payload: CreateOrderIn,
@@ -127,39 +143,7 @@ def create_order(
 ):
     digest, data = normalized_payload(payload)
 
-    existing = db.scalar(
-        select(Order).where(
-            Order.user_id == data["user_id"],
-            Order.idempotency_key == idempotency_key,
-        )
-    )
-
-    if existing:
-        if existing.request_hash != digest:
-            raise HTTPException(
-                status_code=409,
-                detail="Idempotency-Key already used with a different payload",
-            )
-        return order_response(existing)
-
-    order = Order(
-        user_id=data["user_id"],
-        vendor_id=data["vendor_id"],
-        items=data["items"],
-        idempotency_key=idempotency_key,
-        request_hash=digest,
-        status="confirmed",
-    )
-    db.add(order)
-
     try:
-        db.commit()
-        db.refresh(order)
-        return order_response(order)
-
-    except IntegrityError:
-        db.rollback()
-
         existing = db.scalar(
             select(Order).where(
                 Order.user_id == data["user_id"],
@@ -168,16 +152,57 @@ def create_order(
         )
 
         if existing:
-            if existing.request_hash != digest:
-                raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        "Idempotency-Key already used with a different payload"
-                    ),
+            return existing_order_response(existing, digest)
+
+        order = Order(
+            user_id=data["user_id"],
+            vendor_id=data["vendor_id"],
+            items=data["items"],
+            idempotency_key=idempotency_key,
+            request_hash=digest,
+            status="confirmed",
+        )
+        db.add(order)
+
+        try:
+            db.commit()
+            db.refresh(order)
+            return order_response(order)
+
+        except IntegrityError:
+            # Another request may have inserted the same key first.
+            db.rollback()
+
+            existing = db.scalar(
+                select(Order).where(
+                    Order.user_id == data["user_id"],
+                    Order.idempotency_key == idempotency_key,
                 )
-            return order_response(existing)
+            )
+
+            if existing:
+                return existing_order_response(existing, digest)
+
+            raise HTTPException(
+                status_code=500,
+                detail="Order could not be saved; retry using the same key",
+            )
+
+    except SQLAlchemyError as exc:
+        try:
+            db.rollback()
+        except SQLAlchemyError:
+            logger.exception("Database rollback failed after order error")
+
+        logger.exception(
+            "Database operation failed during order creation (%s)",
+            type(exc).__name__,
+        )
 
         raise HTTPException(
-            status_code=500,
-            detail="Order could not be saved; retry using the same key",
-        )
+            status_code=503,
+            detail=(
+                "Database temporarily unavailable; retry using the same "
+                "Idempotency-Key"
+            ),
+        ) from exc

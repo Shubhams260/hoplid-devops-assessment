@@ -244,3 +244,30 @@ The test demonstrated idempotent behavior for 10 concurrent requests using the s
 
 ### Limitations
 This was one local test run with 10 concurrent workers against the Docker Compose test API. It does not establish behavior under all concurrency levels, database outages, or a crash after transaction commit but before the response reaches the client. The test API exposed `/health`; the newer readiness and liveness endpoints were not present in that older test container.
+
+## Database Unavailability Test — 2026-10-26
+
+### Objective
+Verify liveness, readiness, and order-creation behavior when the API cannot connect to PostgreSQL.
+
+### Environment
+- Image: `hoplid-test-api:latest`
+- Temporary API port: `127.0.0.1:18001`
+- Database target: `host.docker.internal:59999/hoplid_test`
+- The database port was intentionally unreachable.
+- No orders were expected to be written during this test.
+
+### Results
+
+| Check | Observed result | Outcome |
+|---|---|---|
+| `GET /health/live` | HTTP 200, `{"status":"alive"}` | PASS |
+| `GET /health/ready` | HTTP 503, `Database unavailable` | PASS |
+| `POST /api/orders` | HTTP 503, retry with the same idempotency key advised | PASS |
+| Server-side error evidence | SQLAlchemy `OperationalError` logged for the unreachable database | PASS |
+
+### Conclusion
+The application remained live while reporting itself as not ready. Order creation returned a controlled HTTP 503 when database connectivity failed, rather than returning an unhandled HTTP 500 to the client.
+
+### Limitations
+This test simulated a connection failure using an unreachable port in an isolated temporary API container. It did not simulate a database outage during an active transaction or establish the outcome of a commit whose acknowledgement is lost.
