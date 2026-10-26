@@ -216,3 +216,31 @@ The application-level drain sequence behaved as expected. Readiness changed from
 This test did not generate concurrent traffic during termination or verify completion of in-flight order requests. It also did not independently measure how quickly Kubernetes removes a draining pod from service endpoints. Those behaviors require separate validation before claiming complete graceful-shutdown guarantees.
 
 The drain token used in this local assessment is a development value and must be replaced with a securely generated secret before production use.
+
+## Idempotency Concurrency Test — 2026-10-26
+
+### Objective
+Verify that concurrent duplicate order submissions do not create duplicate records, and that reusing an idempotency key with a different payload is rejected.
+
+### Environment
+- API: local Docker Compose test API at `http://localhost:8001`
+- Database: `hoplid_test`
+- Concurrent workers: 10
+- Requests: 10 concurrent submissions using the same unique user, idempotency key, and payload
+
+### Results
+
+| Check | Observed result | Outcome |
+|---|---|---|
+| API health | `GET /health` returned 200 | PASS |
+| Concurrent duplicate requests | 10 responses returned HTTP 201 | PASS |
+| Returned order identity | All 10 responses contained the same order ID | PASS |
+| Same key with changed payload | HTTP 409 Conflict | PASS |
+| Database row count for test user/key | Exactly 1 row | PASS |
+| Test data cleanup | Targeted cleanup completed | PASS |
+
+### Conclusion
+The test demonstrated idempotent behavior for 10 concurrent requests using the same key and payload. Reusing that key with a different payload returned HTTP 409, and the database contained exactly one matching order after the concurrent requests.
+
+### Limitations
+This was one local test run with 10 concurrent workers against the Docker Compose test API. It does not establish behavior under all concurrency levels, database outages, or a crash after transaction commit but before the response reaches the client. The test API exposed `/health`; the newer readiness and liveness endpoints were not present in that older test container.
