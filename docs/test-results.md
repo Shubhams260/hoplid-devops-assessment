@@ -271,3 +271,41 @@ The application remained live while reporting itself as not ready. Order creatio
 
 ### Limitations
 This test simulated a connection failure using an unreachable port in an isolated temporary API container. It did not simulate a database outage during an active transaction or establish the outcome of a commit whose acknowledgement is lost.
+
+## Pod Termination During Load Test — 2026-10-26
+
+### Objective
+Evaluate API availability while deleting one API pod during concurrent order traffic.
+
+### Environment
+- Kubernetes Deployment: `hoplid-api`
+- Initial replicas: 2 ready pods
+- Load generator: `loadtest/load_test.py`
+- Endpoint: `http://127.0.0.1:8000/api/orders`
+- Requests: 200
+- Concurrency: 10
+- Request timeout: 15 seconds
+- Disruption: deleted one `hoplid-api` pod while the load test was running
+
+### Results
+
+| Metric | Observed result |
+|---|---:|
+| Total requests | 200 |
+| Successful 2xx responses | 200 |
+| Failed requests | 0 |
+| Error rate | 0.00% |
+| Duration | 5.955 seconds |
+| Throughput | 33.59 requests/second |
+| p50 latency | 218.47 ms |
+| p95 latency | 619.07 ms |
+| p99 latency | 1,252.32 ms |
+
+### Recovery
+The deleted pod was replaced by a new pod. The Deployment subsequently reported a successful rollout, with two ready replicas.
+
+### Conclusion
+The test observed zero failed requests during a load run that overlapped with deletion of one API pod. Kubernetes restored the desired replica count successfully.
+
+### Limitations
+The test did not timestamp individual requests against the exact pod termination interval. Therefore, it demonstrates successful load-test completion during the disruption run, but does not conclusively prove that every request overlapping the termination window succeeded. The result is from a local assessment cluster and does not establish production availability guarantees.
