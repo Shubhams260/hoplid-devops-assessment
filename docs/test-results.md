@@ -187,3 +187,32 @@ All 300 health requests recorded by the probe completed without a reported failu
 The available terminal output does not establish the exact timing of the pod deletion relative to the monitoring interval. Therefore, this run demonstrates successful Service health checks and replica recovery, but does not conclusively establish zero failed requests during the exact pod-termination window. A timestamped, synchronized repeat would provide stronger evidence of termination-time availability.
 
 This is a local-cluster test and does not establish production availability guarantees.
+
+## Graceful Drain and Request Rejection Test — 2026-10-26
+
+### Objective
+Verify that the API transitions to a draining state, reports itself as not ready, and rejects new application requests after an authorized drain request.
+
+### Environment
+- Docker image: `hoplid-api:local`
+- Temporary container: `hoplid-drain-test`
+- Test address: `127.0.0.1:18000`
+- Database: `hoplid`
+- Drain authorization: `X-Drain-Token` header
+
+### Procedure and Results
+
+| Step | Request | Observed result | Outcome |
+|---|---|---|---|
+| 1 | `GET /health/ready` before draining | `200 OK`, database reported `ok` | PASS |
+| 2 | `POST /internal/drain` with valid drain token | `200 OK`, status `draining` | PASS |
+| 3 | `GET /health/ready` after draining | `503 Service Unavailable` | PASS |
+| 4 | `POST /api/orders` after draining | `503 Service Unavailable` | PASS |
+
+### Conclusion
+The application-level drain sequence behaved as expected. Readiness changed from healthy to unavailable, and a new order request was rejected after draining began. The temporary test container was removed after testing.
+
+### Limitations
+This test did not generate concurrent traffic during termination or verify completion of in-flight order requests. It also did not independently measure how quickly Kubernetes removes a draining pod from service endpoints. Those behaviors require separate validation before claiming complete graceful-shutdown guarantees.
+
+The drain token used in this local assessment is a development value and must be replaced with a securely generated secret before production use.
