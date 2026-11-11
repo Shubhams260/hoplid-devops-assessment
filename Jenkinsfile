@@ -2,11 +2,24 @@
 pipeline {
     agent any
 
+    options {
+        skipDefaultCheckout(true)
+    }
+
     stages {
 
         stage('Checkout') {
             steps {
                 checkout scm
+
+                script {
+                    env.IMAGE_TAG = sh(
+                        script: 'git rev-parse --short=12 HEAD',
+                        returnStdout: true
+                    ).trim()
+
+                    echo "Building Docker image with tag: ${env.IMAGE_TAG}"
+                }
             }
         }
 
@@ -31,7 +44,7 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 sh '''
-                    docker build -t hoplid-api:jenkins .
+                    docker build -t hoplid-api:${IMAGE_TAG} .
                 '''
             }
         }
@@ -39,7 +52,7 @@ pipeline {
         stage('Verify Docker Image') {
             steps {
                 sh '''
-                    docker image inspect hoplid-api:jenkins
+                    docker image inspect hoplid-api:${IMAGE_TAG}
                 '''
             }
         }
