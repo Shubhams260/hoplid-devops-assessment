@@ -1,5 +1,7 @@
 FROM python:3.12-slim
 
+# Keep base image packages updated for security patches
+
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 
 RUN apt-get update \
